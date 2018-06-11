@@ -3,13 +3,10 @@ import pandas as pd
 import gc
 import time
 from contextlib import contextmanager
-from lightgbm import LGBMClassifier
-from sklearn.metrics import roc_auc_score, roc_curve
-from sklearn.model_selection import KFold, StratifiedKFold
-import matplotlib.pyplot as plt
-import seaborn as sns
 import warnings
+
 warnings.simplefilter(action='ignore', category=FutureWarning)
+
 
 @contextmanager
 def timer(title):
@@ -17,28 +14,30 @@ def timer(title):
     yield
     print("{} - done in {:.0f}s".format(title, time.time() - t0))
 
+
 # One-hot encoding for categorical columns with get_dummies
-def one_hot_encoder(df, nan_as_category = True):
+def one_hot_encoder(df, nan_as_category=True):
     original_columns = list(df.columns)
     categorical_columns = [col for col in df.columns if df[col].dtype == 'object']
-    df = pd.get_dummies(df, columns= categorical_columns, dummy_na= nan_as_category)
+    df = pd.get_dummies(df, columns=categorical_columns, dummy_na=nan_as_category)
     new_columns = [c for c in df.columns if c not in original_columns]
     return df, new_columns
 
+
 # Preprocess application_train.csv and application_test.csv
-def application_train_test(num_rows = None, nan_as_category = True):
+def application_train_test(num_rows=None, nan_as_category=True):
     # Read data and merge
-    df = pd.read_csv('../data/application_train.csv', nrows= num_rows)
-    test_df = pd.read_csv('../data/application_test.csv', nrows= num_rows)
+    df = pd.read_csv('../data/application_train.csv', nrows=num_rows)
+    test_df = pd.read_csv('../data/application_test.csv', nrows=num_rows)
     print("Train samples: {}, test samples: {}".format(len(df), len(test_df)))
     df = df.append(test_df).reset_index()
-    
+
     # Categorical features: Binary features and One-Hot encoding
     for bin_feature in ['CODE_GENDER', 'FLAG_OWN_CAR', 'FLAG_OWN_REALTY']:
         df[bin_feature], uniques = pd.factorize(df[bin_feature])
     df, cat_cols = one_hot_encoder(df, nan_as_category)
     # NaN values for DAYS_EMPLOYED: 365.243 -> nan
-    df['DAYS_EMPLOYED'].replace(365243, np.nan, inplace= True)
+    df['DAYS_EMPLOYED'].replace(365243, np.nan, inplace=True)
     # Some simple new features (percentages)
     df['DAYS_EMPLOYED_PERC'] = df['DAYS_EMPLOYED'] / df['DAYS_BIRTH']
     df['INCOME_CREDIT_PERC'] = df['AMT_INCOME_TOTAL'] / df['AMT_CREDIT']
@@ -47,13 +46,15 @@ def application_train_test(num_rows = None, nan_as_category = True):
     del test_df
     gc.collect()
     return df
+
+
 # Preprocess bureau.csv and bureau_balance.csv
-def bureau_and_balance(num_rows = None, nan_as_category = True):
-    bureau = pd.read_csv('../data/bureau.csv', nrows = num_rows)
-    bb = pd.read_csv('../data/bureau_balance.csv', nrows = num_rows)
+def bureau_and_balance(num_rows=None, nan_as_category=True):
+    bureau = pd.read_csv('../data/bureau.csv', nrows=num_rows)
+    bb = pd.read_csv('../data/bureau_balance.csv', nrows=num_rows)
     bb, bb_cat = one_hot_encoder(bb, nan_as_category)
     bureau, bureau_cat = one_hot_encoder(bureau, nan_as_category)
-    
+
     # Bureau balance: Perform aggregations and merge with bureau.csv
     bb_aggregations = {'MONTHS_BALANCE': ['min', 'max', 'size']}
     for col in bb_cat:
@@ -61,10 +62,10 @@ def bureau_and_balance(num_rows = None, nan_as_category = True):
     bb_agg = bb.groupby('SK_ID_BUREAU').agg(bb_aggregations)
     bb_agg.columns = pd.Index([e[0] + "_" + e[1].upper() for e in bb_agg.columns.tolist()])
     bureau = bureau.join(bb_agg, how='left', on='SK_ID_BUREAU')
-    bureau.drop(columns= 'SK_ID_BUREAU', inplace= True)
+    bureau.drop(columns='SK_ID_BUREAU', inplace=True)
     del bb, bb_agg
     gc.collect()
-    
+
     # Bureau and bureau_balance numeric features
     num_aggregations = {
         'DAYS_CREDIT': ['min', 'max', 'mean', 'var'],
@@ -86,7 +87,7 @@ def bureau_and_balance(num_rows = None, nan_as_category = True):
     cat_aggregations = {}
     for cat in bureau_cat: cat_aggregations[cat] = ['mean']
     for cat in bb_cat: cat_aggregations[cat + "_MEAN"] = ['mean']
-    
+
     bureau_agg = bureau.groupby('SK_ID_CURR').agg({**num_aggregations, **cat_aggregations})
     bureau_agg.columns = pd.Index(['BURO_' + e[0] + "_" + e[1].upper() for e in bureau_agg.columns.tolist()])
     # Bureau: Active credits - using only numerical aggregations
@@ -105,16 +106,17 @@ def bureau_and_balance(num_rows = None, nan_as_category = True):
     gc.collect()
     return bureau_agg
 
+
 # Preprocess previous_applications.csv
-def previous_applications(num_rows = None, nan_as_category = True):
-    prev = pd.read_csv('../data/previous_application.csv', nrows = num_rows)
-    prev, cat_cols = one_hot_encoder(prev, nan_as_category= True)
+def previous_applications(num_rows=None, nan_as_category=True):
+    prev = pd.read_csv('../data/previous_application.csv', nrows=num_rows)
+    prev, cat_cols = one_hot_encoder(prev, nan_as_category=True)
     # Days 365.243 values -> nan
-    prev['DAYS_FIRST_DRAWING'].replace(365243, np.nan, inplace= True)
-    prev['DAYS_FIRST_DUE'].replace(365243, np.nan, inplace= True)
-    prev['DAYS_LAST_DUE_1ST_VERSION'].replace(365243, np.nan, inplace= True)
-    prev['DAYS_LAST_DUE'].replace(365243, np.nan, inplace= True)
-    prev['DAYS_TERMINATION'].replace(365243, np.nan, inplace= True)
+    prev['DAYS_FIRST_DRAWING'].replace(365243, np.nan, inplace=True)
+    prev['DAYS_FIRST_DUE'].replace(365243, np.nan, inplace=True)
+    prev['DAYS_LAST_DUE_1ST_VERSION'].replace(365243, np.nan, inplace=True)
+    prev['DAYS_LAST_DUE'].replace(365243, np.nan, inplace=True)
+    prev['DAYS_TERMINATION'].replace(365243, np.nan, inplace=True)
     # Add feature: value ask / value received percentage
     prev['APP_CREDIT_PERC'] = prev['AMT_APPLICATION'] / prev['AMT_CREDIT']
     # Previous applications numeric features
@@ -134,7 +136,7 @@ def previous_applications(num_rows = None, nan_as_category = True):
     cat_aggregations = {}
     for cat in cat_cols:
         cat_aggregations[cat] = ['mean']
-    
+
     prev_agg = prev.groupby('SK_ID_CURR').agg({**num_aggregations, **cat_aggregations})
     prev_agg.columns = pd.Index(['PREV_' + e[0] + "_" + e[1].upper() for e in prev_agg.columns.tolist()])
     # Previous Applications: Approved Applications - only numerical features
@@ -151,10 +153,11 @@ def previous_applications(num_rows = None, nan_as_category = True):
     gc.collect()
     return prev_agg
 
+
 # Preprocess POS_CASH_balance.csv
-def pos_cash(num_rows = None, nan_as_category = True):
-    pos = pd.read_csv('../data/POS_CASH_balance.csv', nrows = num_rows)
-    pos, cat_cols = one_hot_encoder(pos, nan_as_category= True)
+def pos_cash(num_rows=None, nan_as_category=True):
+    pos = pd.read_csv('../data/POS_CASH_balance.csv', nrows=num_rows)
+    pos, cat_cols = one_hot_encoder(pos, nan_as_category=True)
     # Features
     aggregations = {
         'MONTHS_BALANCE': ['max', 'mean', 'size'],
@@ -163,7 +166,7 @@ def pos_cash(num_rows = None, nan_as_category = True):
     }
     for cat in cat_cols:
         aggregations[cat] = ['mean']
-    
+
     pos_agg = pos.groupby('SK_ID_CURR').agg(aggregations)
     pos_agg.columns = pd.Index(['POS_' + e[0] + "_" + e[1].upper() for e in pos_agg.columns.tolist()])
     # Count pos cash accounts
@@ -172,13 +175,14 @@ def pos_cash(num_rows = None, nan_as_category = True):
     gc.collect()
     return pos_agg
 
+
 # Preprocess bureau.csv and bureau_balance.csv
-def bureau_and_balance(num_rows = None, nan_as_category = True):
-    bureau = pd.read_csv('../data/bureau.csv', nrows = num_rows)
-    bb = pd.read_csv('../data/bureau_balance.csv', nrows = num_rows)
+def bureau_and_balance(num_rows=None, nan_as_category=True):
+    bureau = pd.read_csv('../data/bureau.csv', nrows=num_rows)
+    bb = pd.read_csv('../data/bureau_balance.csv', nrows=num_rows)
     bb, bb_cat = one_hot_encoder(bb, nan_as_category)
     bureau, bureau_cat = one_hot_encoder(bureau, nan_as_category)
-    
+
     # Bureau balance: Perform aggregations and merge with bureau.csv
     bb_aggregations = {'MONTHS_BALANCE': ['min', 'max', 'size']}
     for col in bb_cat:
@@ -186,10 +190,10 @@ def bureau_and_balance(num_rows = None, nan_as_category = True):
     bb_agg = bb.groupby('SK_ID_BUREAU').agg(bb_aggregations)
     bb_agg.columns = pd.Index([e[0] + "_" + e[1].upper() for e in bb_agg.columns.tolist()])
     bureau = bureau.join(bb_agg, how='left', on='SK_ID_BUREAU')
-    bureau.drop(columns= 'SK_ID_BUREAU', inplace= True)
+    bureau.drop(columns='SK_ID_BUREAU', inplace=True)
     del bb, bb_agg
     gc.collect()
-    
+
     # Bureau and bureau_balance numeric features
     num_aggregations = {
         'DAYS_CREDIT': ['min', 'max', 'mean', 'var'],
@@ -211,7 +215,7 @@ def bureau_and_balance(num_rows = None, nan_as_category = True):
     cat_aggregations = {}
     for cat in bureau_cat: cat_aggregations[cat] = ['mean']
     for cat in bb_cat: cat_aggregations[cat + "_MEAN"] = ['mean']
-    
+
     bureau_agg = bureau.groupby('SK_ID_CURR').agg({**num_aggregations, **cat_aggregations})
     bureau_agg.columns = pd.Index(['BURO_' + e[0] + "_" + e[1].upper() for e in bureau_agg.columns.tolist()])
     # Bureau: Active credits - using only numerical aggregations
@@ -230,10 +234,11 @@ def bureau_and_balance(num_rows = None, nan_as_category = True):
     gc.collect()
     return bureau_agg
 
-# Preprocess installments_payments.csv
-def installments_payments(num_rows = None, nan_as_category = True):
-    ins = pd.read_csv('../data/installments_payments.csv', nrows = num_rows)
-    ins, cat_cols = one_hot_encoder(ins, nan_as_category= True)
+
+# Preprocessing installments_payments.csv
+def installments_payments(num_rows=None, nan_as_category=True):
+    ins = pd.read_csv('../data/installments_payments.csv', nrows=num_rows)
+    ins, cat_cols = one_hot_encoder(ins, nan_as_category=True)
     # Percentage and difference paid in each installment (amount paid and installment value)
     ins['PAYMENT_PERC'] = ins['AMT_PAYMENT'] / ins['AMT_INSTALMENT']
     ins['PAYMENT_DIFF'] = ins['AMT_INSTALMENT'] - ins['AMT_PAYMENT']
@@ -263,12 +268,13 @@ def installments_payments(num_rows = None, nan_as_category = True):
     gc.collect()
     return ins_agg
 
- # Preprocess credit_card_balance.csv
-def credit_card_balance(num_rows = None, nan_as_category = True):
-    cc = pd.read_csv('../data/credit_card_balance.csv', nrows = num_rows)
-    cc, cat_cols = one_hot_encoder(cc, nan_as_category= True)
+
+# Preprocess credit_card_balance.csv
+def credit_card_balance(num_rows=None, nan_as_category=True):
+    cc = pd.read_csv('../data/credit_card_balance.csv', nrows=num_rows)
+    cc, cat_cols = one_hot_encoder(cc, nan_as_category=True)
     # General aggregations
-    cc.drop(columns = ['SK_ID_PREV'], inplace = True)
+    cc.drop(columns=['SK_ID_PREV'], inplace=True)
     cc_agg = cc.groupby('SK_ID_CURR').agg(['min', 'max', 'mean', 'sum', 'var'])
     cc_agg.columns = pd.Index(['CC_' + e[0] + "_" + e[1].upper() for e in cc_agg.columns.tolist()])
     # Count credit card lines
@@ -277,69 +283,8 @@ def credit_card_balance(num_rows = None, nan_as_category = True):
     gc.collect()
     return cc_agg
 
-# LightGBM GBDT with KFold or Stratified KFold
-# Parameters from Tilii kernel: https://www.kaggle.com/tilii7/olivier-lightgbm-parameters-by-bayesian-opt/code
-def kfold_lightgbm(df, num_folds, stratified = False):
-    # Divide in training/validation and test data
-    train_df = df[df['TARGET'].notnull()]
-    test_df = df[df['TARGET'].isnull()]
-    print("Starting LightGBM. Train shape: {}, test shape: {}".format(train_df.shape, test_df.shape))
-    del df
-    gc.collect()
-    # Cross validation model
-    if stratified:
-        folds = StratifiedKFold(n_splits= num_folds, shuffle=True, random_state=1001)
-    else:
-        folds = KFold(n_splits= num_folds, shuffle=True, random_state=1001)
-    # Create arrays and dataframes to store results
-    oof_preds = np.zeros(train_df.shape[0])
-    sub_preds = np.zeros(test_df.shape[0])
-    feature_importance_df = pd.DataFrame()
-    feats = [f for f in train_df.columns if f not in ['TARGET','SK_ID_CURR','SK_ID_BUREAU','SK_ID_PREV']]
-    
-    for n_fold, (train_idx, valid_idx) in enumerate(folds.split(train_df[feats], train_df['TARGET'])):
-        train_x, train_y = train_df[feats].iloc[train_idx], train_df['TARGET'].iloc[train_idx]
-        valid_x, valid_y = train_df[feats].iloc[valid_idx], train_df['TARGET'].iloc[valid_idx]
 
-        # LightGBM parameters found by Bayesian optimization
-        clf = LGBMClassifier(
-            nthread=4,
-            n_estimators=10000,
-            learning_rate=0.01,
-            num_leaves=40,
-            colsample_bytree=0.9497036,
-            subsample=0.8715623,
-            max_depth=8,
-            reg_alpha=0.041545473,
-            reg_lambda=0.0735294,
-            min_split_gain=0.0222415,
-            min_child_weight=39.3259775,
-            silent=-1,
-            verbose=-1, )
-
-        clf.fit(train_x, train_y, eval_set=[(train_x, train_y), (valid_x, valid_y)], 
-            eval_metric= 'auc', verbose= 100, early_stopping_rounds= 100)
-
-        oof_preds[valid_idx] = clf.predict_proba(valid_x, num_iteration=clf.best_iteration_)[:, 1]
-        sub_preds += clf.predict_proba(test_df[feats], num_iteration=clf.best_iteration_)[:, 1] / folds.n_splits
-
-        fold_importance_df = pd.DataFrame()
-        fold_importance_df["feature"] = feats
-        fold_importance_df["importance"] = clf.feature_importances_
-        fold_importance_df["fold"] = n_fold + 1
-        feature_importance_df = pd.concat([feature_importance_df, fold_importance_df], axis=0)
-        print('Fold %2d AUC : %.6f' % (n_fold + 1, roc_auc_score(valid_y, oof_preds[valid_idx])))
-        del clf, train_x, train_y, valid_x, valid_y
-        gc.collect()
-
-    print('Full AUC score %.6f' % roc_auc_score(train_df['TARGET'], oof_preds))
-    # Write submission file and plot feature importance
-    test_df['TARGET'] = sub_preds
-    test_df[['SK_ID_CURR', 'TARGET']].to_csv(submission_file_name, index= False)
-    display_importances(feature_importance_df)
-    return feature_importance_df
-
-def main(debug = False):
+def main(debug=False):
     num_rows = 10000 if debug else None
     df = application_train_test(num_rows)
     with timer("Process bureau and bureau_balance"):
@@ -372,17 +317,18 @@ def main(debug = False):
         df = df.join(cc, how='left', on='SK_ID_CURR')
         del cc
         gc.collect()
-    
-    #Save data collection
+
+    # Save data collection
     print('Saving...')
-    #Divide in training and testing data
-    train_df=df[df['TARGET'].notnull()]
-    test_df=df[df['TARGET'].isnull()]
-    train_df.to_csv('../data/training.csv')
-    test_df.to_csv('../data/testing.csv')
+    # Divide in training and testing data
+    df[df['TARGET'].notnull()].to_csv('../data/training.csv', index=False)
+    df[df['TARGET'].isnull()].to_csv('../data/testing.csv', index=False)
     print('Done!')
+    del df
+    gc.collect()
+
 
 if __name__ == "__main__":
     submission_file_name = "submission_kernel.csv"
     with timer("Full model run"):
-        main(debug= False)
+        main(debug=False)
