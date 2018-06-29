@@ -6,7 +6,7 @@ from sklearn.preprocessing import LabelEncoder, MinMaxScaler
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import roc_auc_score, precision_recall_curve, roc_curve, average_precision_score
 from keras.models import Sequential, Model
-from keras.layers import Dense, Activation, merge, Reshape, Dropout, Input, Flatten, Concatenate
+from keras.layers import Dense, Activation, merge, Reshape, Dropout, Input, Flatten, Concatenate, BatchNormalization
 from keras.layers.embeddings import Embedding
 from keras.callbacks import EarlyStopping
 import os
@@ -39,7 +39,7 @@ def display_roc_curve(y_, oof_preds_, folds_idx_):
     plt.show()
 
 def display_precision_recall(y_, oof_preds_, folds_idx_):
-    # Plot ROC curves
+    # Plot ROC curves 
     plt.figure(figsize=(6,6))
     
     scores = [] 
@@ -192,6 +192,7 @@ def build_embedding_network(len_embed_cols, x_dim):
     
     outputs = (Dense(128))(outputs) 
     outputs = (Activation('relu'))(outputs)
+    outputs = (BatchNormalization())(outputs)
     outputs = (Dropout(.35))(outputs)
     outputs = (Dense(64))(outputs)
     outputs = (Activation('relu'))(outputs)
