@@ -232,40 +232,40 @@ def preproc(X_train, X_val, X_test):
     return input_list_train, input_list_val, input_list_test
 
 
-train, test = preprocessing('../data/', debug=False)
-X_train, y_train = train.iloc[:,2:], train.TARGET
-X_test = test.iloc[:,1:]
-
-col_vals_dict = {c: list(X_train[c].unique()) for c in X_train.columns if X_train[c].dtype == object}
-
-
-nb_numeric   = len(X_train.columns) - len(col_vals_dict)
-nb_categoric = len(col_vals_dict)
-print('Number of Numerical features:', nb_numeric)
-print('Number of Categorical features:', nb_categoric)
-
-# Generator to parse the cat
-generator = (c for c in X_train.columns if X_train[c].dtype == object)
-
-# Label Encoder
-for c in generator:
-    lbl = LabelEncoder()
-    lbl.fit(list(X_train[c].values) + list(X_test[c].values))
-    X_train[c] = lbl.transform(list(X_train[c].values))
-    X_test[c] = lbl.transform(list(X_test[c].values))
-
-embed_cols = []
-len_embed_cols = []
-for c in col_vals_dict:
-    if len(col_vals_dict[c])>2:
-        embed_cols.append(c)
-        len_embed_cols.append(len(col_vals_dict[c]))
-        print(c + ': %d values' % len(col_vals_dict[c])) #look at value counts to know the embedding dimensions
-        
-print('\n Number of embed features :', len(embed_cols))
-
 
 if __name__=='__main__':
+
+	train, test = preprocessing('../data/', debug=False)
+	X_train, y_train = train.iloc[:,2:], train.TARGET
+	X_test = test.iloc[:,1:]
+
+	col_vals_dict = {c: list(X_train[c].unique()) for c in X_train.columns if X_train[c].dtype == object}
+
+
+	nb_numeric   = len(X_train.columns) - len(col_vals_dict)
+	nb_categoric = len(col_vals_dict)
+	print('Number of Numerical features:', nb_numeric)
+	print('Number of Categorical features:', nb_categoric)
+
+	# Generator to parse the cat
+	generator = (c for c in X_train.columns if X_train[c].dtype == object)
+
+	# Label Encoder
+	for c in generator:
+	    lbl = LabelEncoder()
+	    lbl.fit(list(X_train[c].values) + list(X_test[c].values))
+	    X_train[c] = lbl.transform(list(X_train[c].values))
+	    X_test[c] = lbl.transform(list(X_test[c].values))
+
+	embed_cols = []
+	len_embed_cols = []
+	for c in col_vals_dict:
+	    if len(col_vals_dict[c])>2:
+	        embed_cols.append(c)
+	        len_embed_cols.append(len(col_vals_dict[c]))
+	        print(c + ': %d values' % len(col_vals_dict[c])) #look at value counts to know the embedding dimensions
+	        
+	print('\n Number of embed features :', len(embed_cols))
 
 	# Select the numeric features
 	num_cols = [x for x in X_train.columns if x not in embed_cols]
