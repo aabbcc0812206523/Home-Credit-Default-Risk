@@ -179,6 +179,7 @@ def build_embedding_network(len_embed_cols, x_dim):
     model_out = []
     model_in  = []
     
+    # usual rule of embedding size = min(50, number of categories/2)
     for dim in len_embed_cols:
         input_dim = Input(shape=(1,), dtype='int32')
         embed_dim = Embedding(dim, dim//2, input_length=1)(input_dim)
@@ -240,12 +241,10 @@ if __name__=='__main__':
 	X_test = test.iloc[:,1:]
 
 	col_vals_dict = {c: list(X_train[c].unique()) for c in X_train.columns if X_train[c].dtype == object}
-
-
-	nb_numeric   = len(X_train.columns) - len(col_vals_dict)
-	nb_categoric = len(col_vals_dict)
-	print('Number of Numerical features:', nb_numeric)
-	print('Number of Categorical features:', nb_categoric)
+	#nb_numeric   = len(X_train.columns) - len(col_vals_dict)
+	#nb_categoric = len(col_vals_dict)
+	#print('Number of Numerical features:', nb_numeric)
+	#print('Number of Categorical features:', nb_categoric)
 
 	# Generator to parse the cat
 	generator = (c for c in X_train.columns if X_train[c].dtype == object)
@@ -319,7 +318,7 @@ if __name__=='__main__':
 	        # Set callback functions to early stop training and save the best model so far
 	        callbacks = [EarlyStopping(monitor='val_loss', patience=patience)]
 
-	        NN.fit(proc_X_train_f, y_train_f.values, epochs=n_epochs, batch_size=4096, verbose=1,callbacks=callbacks,validation_data=(proc_X_val_f, y_val_f))
+	        NN.fit(proc_X_train_f, y_train_f.values, epochs=n_epochs, batch_size=4096, verbose=2,callbacks=callbacks,validation_data=(proc_X_val_f, y_val_f))
 	        
 	        val_preds += NN.predict(proc_X_val_f)[:,0] / runs_per_fold
 	        y_preds[:,i] += NN.predict(proc_X_test_f)[:,0] / runs_per_fold
