@@ -234,100 +234,96 @@ def preproc(X_train, X_val, X_test):
 
 
 
-if __name__=='__main__':
+train, test = preprocessing('../data/', debug=False)
+X_train, y_train = train.iloc[:,2:], train.TARGET
+X_test = test.iloc[:,1:]
 
-	train, test = preprocessing('../data/', debug=False)
-	X_train, y_train = train.iloc[:,2:], train.TARGET
-	X_test = test.iloc[:,1:]
+col_vals_dict = {c: list(X_train[c].unique()) for c in X_train.columns if X_train[c].dtype == object}
+#nb_numeric   = len(X_train.columns) - len(col_vals_dict)
+#nb_categoric = len(col_vals_dict)
+#print('Number of Numerical features:', nb_numeric)
+#print('Number of Categorical features:', nb_categoric)
 
-	col_vals_dict = {c: list(X_train[c].unique()) for c in X_train.columns if X_train[c].dtype == object}
-	#nb_numeric   = len(X_train.columns) - len(col_vals_dict)
-	#nb_categoric = len(col_vals_dict)
-	#print('Number of Numerical features:', nb_numeric)
-	#print('Number of Categorical features:', nb_categoric)
+# Generator to parse the cat
+generator = (c for c in X_train.columns if X_train[c].dtype == object)
 
-	# Generator to parse the cat
-	generator = (c for c in X_train.columns if X_train[c].dtype == object)
+# Label Encoder
+for c in generator:
+    lbl = LabelEncoder()
+    lbl.fit(list(X_train[c].values) + list(X_test[c].values))
+    X_train[c] = lbl.transform(list(X_train[c].values))
+    X_test[c] = lbl.transform(list(X_test[c].values))
 
-	# Label Encoder
-	for c in generator:
-	    lbl = LabelEncoder()
-	    lbl.fit(list(X_train[c].values) + list(X_test[c].values))
-	    X_train[c] = lbl.transform(list(X_train[c].values))
-	    X_test[c] = lbl.transform(list(X_test[c].values))
+embed_cols = []
+len_embed_cols = []
+for c in col_vals_dict:
+    if len(col_vals_dict[c])>2:
+        embed_cols.append(c)
+        len_embed_cols.append(len(col_vals_dict[c]))
+        print(c + ': %d values' % len(col_vals_dict[c])) #look at value counts to know the embedding dimensions
+        
+print('\n Number of embed features :', len(embed_cols))
 
-	embed_cols = []
-	len_embed_cols = []
-	for c in col_vals_dict:
-	    if len(col_vals_dict[c])>2:
-	        embed_cols.append(c)
-	        len_embed_cols.append(len(col_vals_dict[c]))
-	        print(c + ': %d values' % len(col_vals_dict[c])) #look at value counts to know the embedding dimensions
+# Select the numeric features
+num_cols = [x for x in X_train.columns if x not in embed_cols]
+
+
+# Impute missing values in order to scale
+X_train[num_cols] = X_train[num_cols].fillna(value = 0)
+X_test[num_cols] = X_test[num_cols].fillna(value = 0)
+
+# Fit the scaler only on train data
+scaler = MinMaxScaler().fit(X_train[num_cols])
+X_train.loc[:,num_cols] = scaler.transform(X_train[num_cols])
+X_test.loc[:,num_cols] = scaler.transform(X_test[num_cols])
+
+K = 5
+runs_per_fold = 1
+n_epochs = 250
+patience = 10
+
+cv_aucs   = []
+full_val_preds = np.zeros(np.shape(X_train)[0])
+y_preds = np.zeros((np.shape(X_test)[0],K))
+
+kfold = StratifiedKFold(n_splits = K,  
+                         shuffle = True, random_state=1)
+
+for i, (f_ind, outf_ind) in enumerate(kfold.split(X_train, y_train)):
+
+    X_train_f, X_val_f = X_train.loc[f_ind].copy(), X_train.loc[outf_ind].copy()
+    y_train_f, y_val_f = y_train[f_ind], y_train[outf_ind]
+	    
+    X_test_f = X_test.copy()
+	    
+	    
+    # Shuffle data
+    idx = np.arange(len(X_train_f))
+    np.random.shuffle(idx)
+    X_train_f = X_train_f.iloc[idx]
+    y_train_f = y_train_f.iloc[idx]
+    
+    #preprocessing
+    proc_X_train_f, proc_X_val_f, proc_X_test_f = preproc(X_train_f, X_val_f, X_test_f)
+    
+    #track oof prediction for cv scores
+    val_preds = 0
+	    
+    for j in range(runs_per_fold):
+	    
+        NN = build_embedding_network(len_embed_cols, x_dim=176)
+        # Set callback functions to early stop training and save the best model so far
+        callbacks = [EarlyStopping(monitor='val_loss', patience=patience)]
+
+        NN.fit(proc_X_train_f, y_train_f.values, epochs=n_epochs, batch_size=4096, verbose=2,callbacks=callbacks,validation_data=(proc_X_val_f, y_val_f))
 	        
-	print('\n Number of embed features :', len(embed_cols))
-
-	# Select the numeric features
-	num_cols = [x for x in X_train.columns if x not in embed_cols]
-
-
-	# Impute missing values in order to scale
-	X_train[num_cols] = X_train[num_cols].fillna(value = 0)
-	X_test[num_cols] = X_test[num_cols].fillna(value = 0)
-
-	# Fit the scaler only on train data
-	scaler = MinMaxScaler().fit(X_train[num_cols])
-	X_train.loc[:,num_cols] = scaler.transform(X_train[num_cols])
-	X_test.loc[:,num_cols] = scaler.transform(X_test[num_cols])
-
-	K = 5
-	runs_per_fold = 1
-	n_epochs = 250
-	patience = 10
-
-	cv_aucs   = []
-	full_val_preds = np.zeros(np.shape(X_train)[0])
-	y_preds = np.zeros((np.shape(X_test)[0],K))
-
-	kfold = StratifiedKFold(n_splits = K,  
-	                            shuffle = True, random_state=1)
-
-	for i, (f_ind, outf_ind) in enumerate(kfold.split(X_train, y_train)):
-
-	    X_train_f, X_val_f = X_train.loc[f_ind].copy(), X_train.loc[outf_ind].copy()
-	    y_train_f, y_val_f = y_train[f_ind], y_train[outf_ind]
-	    
-	    X_test_f = X_test.copy()
-	    
-	    
-	    # Shuffle data
-	    idx = np.arange(len(X_train_f))
-	    np.random.shuffle(idx)
-	    X_train_f = X_train_f.iloc[idx]
-	    y_train_f = y_train_f.iloc[idx]
-	    
-	    #preprocessing
-	    proc_X_train_f, proc_X_val_f, proc_X_test_f = preproc(X_train_f, X_val_f, X_test_f)
-	    
-	    #track oof prediction for cv scores
-	    val_preds = 0
-	    
-	    for j in range(runs_per_fold):
-	    
-	        NN = build_embedding_network(len_embed_cols, x_dim=176)
-
-	        # Set callback functions to early stop training and save the best model so far
-	        callbacks = [EarlyStopping(monitor='val_loss', patience=patience)]
-
-	        NN.fit(proc_X_train_f, y_train_f.values, epochs=n_epochs, batch_size=4096, verbose=2,callbacks=callbacks,validation_data=(proc_X_val_f, y_val_f))
+        val_preds += NN.predict(proc_X_val_f)[:,0] / runs_per_fold
+        y_preds[:,i] += NN.predict(proc_X_test_f)[:,0] / runs_per_fold
+        full_val_preds[outf_ind] += val_preds
 	        
-	        val_preds += NN.predict(proc_X_val_f)[:,0] / runs_per_fold
-	        y_preds[:,i] += NN.predict(proc_X_test_f)[:,0] / runs_per_fold
-	        
-	    full_val_preds[outf_ind] += val_preds
-	        
-	    cv_auc  = roc_auc_score(y_val_f.values, val_preds)
-	    cv_aucs.append(cv_auc)
-	    print ('\nFold %i prediction cv AUC: %.5f\n' %(i,cv_auc))
-	    
-	print('Mean out of fold AUC: %.5f' % np.mean(cv_auc))
-	print('Full validation AUC: %.5f' % roc_auc_score(y_train.values, full_val_preds))
+cv_auc  = roc_auc_score(y_val_f.values, val_preds)
+cv_aucs.append(cv_auc)
+print ('\nFold %i prediction cv AUC: %.5f\n' %(i,cv_auc))
+    
+print('Mean out of fold AUC: %.5f' % np.mean(cv_auc))
+print('Full validation AUC: %.5f' % roc_auc_score(y_train.values, full_val_preds))
